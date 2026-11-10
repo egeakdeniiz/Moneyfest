@@ -47,7 +47,7 @@ class DeadlockSimulatorApp:
         self.health_label = tk.Label(top_bar, text="HEALTHY", bg="#2ecc71", fg="white", font=("Helvetica", 8, "bold"), padx=6, pady=2)
         self.health_label.pack(side=tk.LEFT, padx=6)
 
-        self.theme_btn = ttk.Button(top_bar, text="🌙 Dark Mode", command=self.toggle_theme)
+        self.theme_btn = ttk.Button(top_bar, text=" Dark Mode", command=self.toggle_theme)
         self.theme_btn.pack(side=tk.RIGHT)
 
         # HAZIR SENARYOLAR
@@ -87,11 +87,11 @@ class DeadlockSimulatorApp:
         step_group = ttk.LabelFrame(self.left_frame, text=" Tüm Kilitleri Adım Adım Çöz ", padding="5")
         step_group.pack(fill=tk.X, pady=5)
 
-        ttk.Button(step_group, text="🎬 Adım Adım Tüm Kilitleri Çöz", command=self.start_sequential_solution_animation).pack(fill=tk.X, pady=4)
+        ttk.Button(step_group, text=" Adım Adım Tüm Kilitleri Çöz", command=self.start_sequential_solution_animation).pack(fill=tk.X, pady=4)
 
         timer_frame = ttk.Frame(step_group)
         timer_frame.pack(fill=tk.X, pady=4)
-        ttk.Label(timer_frame, text="⏱️ Geçen Süre:", font=("Helvetica", 8, "bold")).pack(side=tk.LEFT)
+        ttk.Label(timer_frame, text=" Geçen Süre:", font=("Helvetica", 8, "bold")).pack(side=tk.LEFT)
         self.timer_label = tk.Label(timer_frame, text="0.000 s (0 ms)", font=("Consolas", 10, "bold"), fg="#e74c3c")
         self.timer_label.pack(side=tk.RIGHT)
 
@@ -108,11 +108,11 @@ class DeadlockSimulatorApp:
         self.strategy_cb.current(0)
         self.strategy_cb.pack(fill=tk.X, pady=4)
 
-        ttk.Button(strategy_group, text="⚡ Seçilen Stratejiyle Çöz", command=self.resolve_single_victim_manual).pack(fill=tk.X, pady=2)
+        ttk.Button(strategy_group, text=" Seçilen Stratejiyle Çöz", command=self.resolve_single_victim_manual).pack(fill=tk.X, pady=2)
 
         # RAPOR VE LOG KAYDETME
-        ttk.Button(self.left_frame, text="📄 Raporu Dosyaya Aktır (.txt)", command=self.export_report).pack(fill=tk.X, pady=2)
-        ttk.Button(self.left_frame, text="💾 İşlem Loglarını Kaydet (.log)", command=self.export_logs).pack(fill=tk.X, pady=2)
+        ttk.Button(self.left_frame, text=" Raporu Dosyaya Aktır (.txt)", command=self.export_report).pack(fill=tk.X, pady=2)
+        ttk.Button(self.left_frame, text=" İşlem Loglarını Kaydet (.log)", command=self.export_logs).pack(fill=tk.X, pady=2)
 
         ttk.Label(self.left_frame, text="Sistem Durum Logu:", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, pady=(5, 2))
         self.log_text = tk.Text(self.left_frame, width=42, height=6, state='disabled')
