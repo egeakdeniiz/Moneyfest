@@ -1,15 +1,17 @@
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
+import time
 import networkx as nx
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+
 from models import DeadlockEngine
 
 class DeadlockSimulatorApp:
     def __init__(self, root):
         self.root = root
         self.root.title("Deadlock Simulator & Banker's Algorithm (Pro Edition)")
-        self.root.geometry("1400x900")
+        self.root.geometry("1400x920")
 
         self.engine = DeadlockEngine()
 
@@ -19,8 +21,14 @@ class DeadlockSimulatorApp:
         self.cost_entries = []
 
         self.is_dark_mode = False
-        self.execution_steps = []
-        self.current_step_idx = 0
+        self.terminated_processes = set()  # Sadece öldürülen kurban süreçler (KIRMIZI)
+        self.completed_processes = set()   # İşini bitiren süreçler (YEŞİL)
+        
+        self.is_animating = False
+        self.anim_speed_ms = 900
+        self.start_timer = 0
+        self.elapsed_time = 0.0
+        self.timer_running = False
 
         self.setup_ui()
 
@@ -31,13 +39,11 @@ class DeadlockSimulatorApp:
         self.left_frame = ttk.Frame(self.root, padding="10")
         self.left_frame.pack(side=tk.LEFT, fill=tk.Y)
 
-        # Üst Başlık, Sağlık Rozeti ve Dark Mode Butonu
         top_bar = ttk.Frame(self.left_frame)
         top_bar.pack(fill=tk.X, pady=5)
         
         ttk.Label(top_bar, text="Deadlock Control Center", font=("Helvetica", 11, "bold")).pack(side=tk.LEFT)
         
-        # Anlık Sistem Sağlık Durum Rozeti
         self.health_label = tk.Label(top_bar, text="HEALTHY", bg="#2ecc71", fg="white", font=("Helvetica", 8, "bold"), padx=6, pady=2)
         self.health_label.pack(side=tk.LEFT, padx=6)
 
@@ -77,39 +83,41 @@ class DeadlockSimulatorApp:
         self.input_group.pack(fill=tk.X, pady=5)
         self.create_matrix_inputs()
 
-        # ADIM ADIM ÇALIŞTIRMA
-        step_group = ttk.LabelFrame(self.left_frame, text=" Adım Adım Algoritma Yürütme ", padding="5")
+        # ADIM ADIM TÜM KİLİTLERİ ÇÖZEN MOTOR
+        step_group = ttk.LabelFrame(self.left_frame, text=" Tüm Kilitleri Adım Adım Çöz ", padding="5")
         step_group.pack(fill=tk.X, pady=5)
 
-        step_btn_frame = ttk.Frame(step_group)
-        step_btn_frame.pack(fill=tk.X)
-        ttk.Button(step_btn_frame, text="▶️ Adım Simülasyonunu Başlat", command=self.start_step_execution).pack(side=tk.LEFT, fill=tk.X, expand=True, padx=2)
-        ttk.Button(step_btn_frame, text="⏭️ Sonraki Adım", command=self.next_step_execution).pack(side=tk.RIGHT, padx=2)
+        ttk.Button(step_group, text="🎬 Adım Adım Tüm Kilitleri Çöz", command=self.start_sequential_solution_animation).pack(fill=tk.X, pady=4)
 
-        # AKILLI ÇÖZÜM STRATEJİLERİ
+        timer_frame = ttk.Frame(step_group)
+        timer_frame.pack(fill=tk.X, pady=4)
+        ttk.Label(timer_frame, text="⏱️ Geçen Süre:", font=("Helvetica", 8, "bold")).pack(side=tk.LEFT)
+        self.timer_label = tk.Label(timer_frame, text="0.000 s (0 ms)", font=("Consolas", 10, "bold"), fg="#e74c3c")
+        self.timer_label.pack(side=tk.RIGHT)
+
+        # SPESİFİK STRATEJİYLE TEK KURBAN ÖLDÜRÜCÜ
         strategy_group = ttk.LabelFrame(self.left_frame, text=" Akıllı Kilitlenme Çözümü ", padding="5")
         strategy_group.pack(fill=tk.X, pady=5)
 
         self.strategy_cb = ttk.Combobox(strategy_group, values=[
-            "Victim: Max Allocation (En Çok Kaynak Tüketen)",
             "Lowest Priority (En Düşük Öncelikliyi Öldür)",
             "Lowest Termination Cost (En Az Maliyetliyi Kurban Et)",
+            "Victim: Max Allocation (En Çok Kaynak Tüketen)",
             "Resource Preemption (Kaynak Geri Alma)"
         ], state="readonly")
         self.strategy_cb.current(0)
         self.strategy_cb.pack(fill=tk.X, pady=4)
-        ttk.Button(strategy_group, text="Seçilen Stratejiyle Çöz", command=self.resolve_deadlock).pack(fill=tk.X, pady=2)
 
-        # RAPOR VE LOG BUTONLARI
+        ttk.Button(strategy_group, text="⚡ Seçilen Stratejiyle Çöz", command=self.resolve_single_victim_manual).pack(fill=tk.X, pady=2)
+
+        # RAPOR VE LOG KAYDETME
         ttk.Button(self.left_frame, text="📄 Raporu Dosyaya Aktır (.txt)", command=self.export_report).pack(fill=tk.X, pady=2)
         ttk.Button(self.left_frame, text="💾 İşlem Loglarını Kaydet (.log)", command=self.export_logs).pack(fill=tk.X, pady=2)
 
-        # LOG EKRANI
         ttk.Label(self.left_frame, text="Sistem Durum Logu:", font=("Helvetica", 10, "bold")).pack(anchor=tk.W, pady=(5, 2))
-        self.log_text = tk.Text(self.left_frame, width=42, height=8, state='disabled')
+        self.log_text = tk.Text(self.left_frame, width=42, height=6, state='disabled')
         self.log_text.pack(fill=tk.BOTH, expand=True)
 
-        # SAĞ PANEL - GRAFİK
         self.right_frame = ttk.Frame(self.root, padding="10")
         self.right_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True)
 
@@ -117,7 +125,7 @@ class DeadlockSimulatorApp:
         self.canvas = FigureCanvasTkAgg(self.fig, master=self.right_frame)
         self.canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
-        self.log("Sistem hazır. Dark Mode, Presets, Step Engine & Health Meter eklendi.")
+        self.log("Sistem hazır.")
         self.draw_graph()
 
     def apply_theme(self):
@@ -159,7 +167,6 @@ class DeadlockSimulatorApp:
             row_frame.pack(fill=tk.X, pady=1)
             ttk.Label(row_frame, text=f"P{i}:", width=3).pack(side=tk.LEFT)
             
-            # Allocation
             alloc_row = []
             for j in range(self.engine.num_resources):
                 e = ttk.Entry(row_frame, width=3)
@@ -170,7 +177,6 @@ class DeadlockSimulatorApp:
 
             ttk.Label(row_frame, text="|").pack(side=tk.LEFT, padx=1)
 
-            # Max Need
             max_row = []
             for j in range(self.engine.num_resources):
                 e = ttk.Entry(row_frame, width=3)
@@ -181,7 +187,6 @@ class DeadlockSimulatorApp:
 
             ttk.Label(row_frame, text="|").pack(side=tk.LEFT, padx=1)
 
-            # Priority & Cost
             pe = ttk.Entry(row_frame, width=3)
             pe.insert(0, str(self.engine.priorities[i]))
             pe.pack(side=tk.LEFT, padx=1)
@@ -195,7 +200,6 @@ class DeadlockSimulatorApp:
         ttk.Button(self.input_group, text="🔄 Matris Değerlerini Güncelle", command=self.update_values_from_ui).pack(fill=tk.X, pady=(6, 2))
 
     def update_health_badge(self):
-        """Sağlık göstergesi rozetini günceller"""
         status_text, bg_color = self.engine.get_system_health_status()
         self.health_label.config(text=status_text, bg=bg_color)
 
@@ -204,6 +208,8 @@ class DeadlockSimulatorApp:
         self.engine.load_preset(preset_name)
         self.p_spin.set(str(self.engine.num_processes))
         self.r_spin.set(str(self.engine.num_resources))
+        self.terminated_processes.clear()
+        self.completed_processes.clear()
         self.create_matrix_inputs()
         self.draw_graph()
         self.log(f"Hazır Senaryo Yüklendi: {preset_name}")
@@ -213,6 +219,8 @@ class DeadlockSimulatorApp:
             new_p = int(self.p_spin.get())
             new_r = int(self.r_spin.get())
             self.engine.set_dimensions(new_p, new_r)
+            self.terminated_processes.clear()
+            self.completed_processes.clear()
             self.create_matrix_inputs()
             self.draw_graph()
             self.log(f"Sistem boyutu {new_p} Süreç x {new_r} Kaynak olarak güncellendi.")
@@ -227,6 +235,8 @@ class DeadlockSimulatorApp:
                     self.engine.max_need[i][j] = int(self.max_entries[i][j].get())
                 self.engine.priorities[i] = int(self.prio_entries[i].get())
                 self.engine.costs[i] = int(self.cost_entries[i].get())
+            self.terminated_processes.clear()
+            self.completed_processes.clear()
             self.log("Matris, Öncelik ve Maliyet değerleri güncellendi.")
             self.draw_graph()
             messagebox.showinfo("Başarılı", "Tüm değerler başarıyla güncellendi!")
@@ -239,7 +249,7 @@ class DeadlockSimulatorApp:
         self.log_text.config(state='disabled')
         self.log_text.see(tk.END)
 
-    def draw_graph(self, highlight_process=None, status=None):
+    def draw_graph(self, active_proc=None, active_status=None):
         self.ax.clear()
         
         bg_color = '#1e1e1e' if self.is_dark_mode else 'white'
@@ -257,12 +267,14 @@ class DeadlockSimulatorApp:
         edges = []
         edge_colors = []
 
+        # Mavi Tahsis Okları
         for i in range(self.engine.num_processes):
             for j in range(self.engine.num_resources):
                 if self.engine.allocation[i][j] > 0:
                     edges.append((f"R{j}", f"P{i}"))
                     edge_colors.append("#3498db")
 
+        # Turuncu Talep Okları
         for i in range(self.engine.num_processes):
             for j in range(self.engine.num_resources):
                 need = self.engine.max_need[i][j] - self.engine.allocation[i][j]
@@ -278,19 +290,17 @@ class DeadlockSimulatorApp:
         for j, r in enumerate(resources):
             pos[r] = (j * (max(len(processes)-1, 1) / max(len(resources)-1, 1)), 0)
 
+        # RENK SKALASI: Kurban=Kırmızı, Tamamlanan=Yeşil, Kontrol Edilen=Sarı, Bekleyen=Mavi
         node_colors = []
         for p in processes:
-            if highlight_process and p == highlight_process:
-                if status == "CHECKING":
-                    node_colors.append("#f1c40f")
-                elif status == "SUCCESS":
-                    node_colors.append("#2ecc71")
-                elif status == "FAILED":
-                    node_colors.append("#e74c3c")
-                else:
-                    node_colors.append("#8e44ad")
+            if p in self.terminated_processes:
+                node_colors.append("#e74c3c")  # KIRMIZI (Öldürülen Kurban)
+            elif p in self.completed_processes:
+                node_colors.append("#2ecc71")  # YEŞİL (Başarılı)
+            elif active_proc and p == active_proc:
+                node_colors.append("#f1c40f")  # SARI (Kontrol)
             else:
-                node_colors.append("#a0c4ff")
+                node_colors.append("#a0c4ff")  # MAVİ (Normal)
 
         nx.draw_networkx_nodes(G, pos, nodelist=processes, node_color=node_colors, node_size=1100, ax=self.ax)
         nx.draw_networkx_nodes(G, pos, nodelist=resources, node_color='#b9fbc0', node_shape='s', node_size=1100, ax=self.ax)
@@ -303,56 +313,110 @@ class DeadlockSimulatorApp:
         
         self.update_health_badge()
 
-    def start_step_execution(self):
-        self.execution_steps = self.engine.get_step_by_step_execution()
-        self.current_step_idx = 0
-        self.log("--- Adım Adım Simülasyon Başlatıldı ---")
-        self.next_step_execution()
-
-    def next_step_execution(self):
-        if not self.execution_steps or self.current_step_idx >= len(self.execution_steps):
-            self.log("Simülasyon adımları tamamlandı!")
-            messagebox.showinfo("Bitti", "Adım adım simülasyon tamamlandı.")
+    # --- SADECE SEÇİLEN STRATEJİYE UYAN TEK SÜRECİ ÖLDÜREN BUTON İŞLEVİ ---
+    def resolve_single_victim_manual(self):
+        selected_strategy = self.strategy_cb.get()
+        victim_idx, exec_time_ms = self.engine.kill_exact_single_victim(selected_strategy, self.terminated_processes)
+        
+        if victim_idx is None:
+            messagebox.showwarning("Uyarı", "Sistemde kapatılacak aktif süreç kalmadı!")
             return
 
-        step = self.execution_steps[self.current_step_idx]
-        self.log(step["msg"])
-        self.draw_graph(highlight_process=step["checking_process"], status=step["status"])
-        self.current_step_idx += 1
-
-    def resolve_deadlock(self):
-        selected_strategy = self.strategy_cb.get()
-        result_msg, victim_idx = self.engine.resolve_deadlock_strategy(selected_strategy)
-        self.create_matrix_inputs()
-        self.log(f"ÇÖZÜM UYGULANDI ({selected_strategy}):")
-        self.log(f"> {result_msg}")
+        victim_name = f"P{victim_idx}"
+        self.terminated_processes.add(victim_name)
+        
+        self.update_matrix_entries_from_engine()
+        self.timer_label.config(text=f"{exec_time_ms} ms", fg="#2ecc71")
         self.draw_graph()
-        messagebox.showinfo("Kilitlenme Çözüldü", f"{result_msg}\nKilitlenme açıldı!")
+        
+        self.log(f"⚡ MÜDAHALE ({selected_strategy}): {victim_name} kurban edildi ve kapatıldı (KIRMIZI). Diğer kilitli süreçler korundu!")
+        messagebox.showinfo("Kurban Kapatıldı", 
+                            f"🔴 Kurban Edilen Süreç: {victim_name} ({selected_strategy})\n\n"
+                            f"Sadece {victim_name} sürecinin kaynakları geri alındı ve okları silindi.\n"
+                            f"Diğer süreçlerin kilitlenmeleri ve okları aynen korunuyor!\n\n"
+                            f"⏱️ Hesaplama Süresi: {exec_time_ms} ms")
+
+    # --- ADIM ADIM TÜM KİLİTLERİ ÇÖZEN ANİMASYON DÖNGÜSÜ ---
+    def start_sequential_solution_animation(self):
+        strategy = self.strategy_cb.get()
+        self.anim_steps = self.engine.generate_sequential_resolve_steps(strategy)
+        self.current_step_idx = 0
+        self.completed_processes.clear()
+        self.terminated_processes.clear()
+        self.is_animating = True
+        
+        self.start_timer = time.time()
+        self.timer_running = True
+        self.update_timer()
+        
+        self.log(f"🎬 Sıralı Çözüm Başlatıldı (Strateji: {strategy})...")
+        self.run_animation_loop()
+
+    def update_timer(self):
+        if self.timer_running:
+            self.elapsed_time = time.time() - self.start_timer
+            ms = round(self.elapsed_time * 1000, 1)
+            self.timer_label.config(text=f"{self.elapsed_time:.3f} s ({ms} ms)", fg="#3498db")
+            self.root.after(50, self.update_timer)
+
+    def run_animation_loop(self):
+        if not self.is_animating:
+            return
+
+        if self.current_step_idx < len(self.anim_steps):
+            step = self.anim_steps[self.current_step_idx]
+            self.log(step["msg"])
+
+            if step["action"] == "CHECK":
+                self.draw_graph(active_proc=step["process"], active_status="CHECK")
+            elif step["action"] == "BLOCKED":
+                self.draw_graph(active_proc=step["process"], active_status="BLOCKED")
+            elif step["action"] == "RESOLVED":
+                self.engine.allocation = step["new_alloc"]
+                self.engine.max_need = step["new_max"]
+                self.engine.available = step["new_avail"]
+                self.update_matrix_entries_from_engine()
+                self.draw_graph(active_proc=step["process"], active_status="CHECK")
+            elif step["action"] == "SUCCESS":
+                self.engine.allocation = step["new_alloc"]
+                self.engine.max_need = step["new_max"]
+                self.engine.available = step["new_avail"]
+                self.update_matrix_entries_from_engine()
+                self.completed_processes.add(step["process"])
+                self.draw_graph()
+
+            self.current_step_idx += 1
+            self.root.after(self.anim_speed_ms, self.run_animation_loop)
+        else:
+            self.is_animating = False
+            self.timer_running = False
+            ms = round(self.elapsed_time * 1000, 2)
+            self.timer_label.config(text=f"{self.elapsed_time:.3f} s ({ms} ms)", fg="#2ecc71")
+            
+            self.log(f"🎉 Tüm kilitlenmeler sırayla açıldı!")
+            messagebox.showinfo("Çözüm Tamamlandı!", f"🎉 Tüm süreçler sırayla çözüldü!\n⏱️ Geçen Süre: {self.elapsed_time:.3f} s ({ms} ms)")
+
+    def update_matrix_entries_from_engine(self):
+        for i in range(self.engine.num_processes):
+            for j in range(self.engine.num_resources):
+                self.alloc_entries[i][j].delete(0, tk.END)
+                self.alloc_entries[i][j].insert(0, str(self.engine.allocation[i][j]))
+                self.max_entries[i][j].delete(0, tk.END)
+                self.max_entries[i][j].insert(0, str(self.engine.max_need[i][j]))
 
     def export_report(self):
         is_safe, safe_seq = self.engine.run_bankers()
         report_text = self.engine.generate_report(is_safe, safe_seq)
-        
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".txt",
-            filetypes=[("Text Files", "*.txt"), ("All Files", "*.*")],
-            title="Deadlock Sistem Raporunu Kaydet"
-        )
+        file_path = filedialog.asksaveasfilename(defaultextension=".txt", filetypes=[("Text Files", "*.txt")])
         if file_path:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(report_text)
-            self.log(f"Rapor kaydedildi: {file_path}")
-            messagebox.showinfo("Başarılı", "Rapor metin dosyası olarak kaydedildi!")
+            messagebox.showinfo("Başarılı", "Rapor kaydedildi!")
 
     def export_logs(self):
-        """Log ekranındaki metinleri .log dosyası olarak kaydeder"""
         log_content = self.log_text.get("1.0", tk.END)
-        file_path = filedialog.asksaveasfilename(
-            defaultextension=".log",
-            filetypes=[("Log Files", "*.log"), ("Text Files", "*.txt"), ("All Files", "*.*")],
-            title="Sistem İşlem Loglarını Kaydet"
-        )
+        file_path = filedialog.asksaveasfilename(defaultextension=".log", filetypes=[("Log Files", "*.log")])
         if file_path:
             with open(file_path, "w", encoding="utf-8") as f:
                 f.write(log_content)
-            messagebox.showinfo("Başarılı", "İşlem logları başarıyla kaydedildi!")
+            messagebox.showinfo("Başarılı", "Loglar kaydedildi!")
