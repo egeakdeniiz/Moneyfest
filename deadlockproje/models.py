@@ -1,18 +1,17 @@
 import datetime
+import time
 
 class DeadlockEngine:
     def __init__(self, num_processes=3, num_resources=2):
         self.num_processes = num_processes
         self.num_resources = num_resources
         
-        # Varsayılan Matrisler
         self.allocation = [[1, 0], [0, 1], [1, 1]]
         self.max_need = [[2, 1], [1, 2], [1, 1]]
         self.available = [0, 0]
         
-        # Süreç Öncelikleri ve Maliyetleri
-        self.priorities = [1, 2, 3]  # P0, P1, P2
-        self.costs = [10, 20, 5]     # P0, P1, P2
+        self.priorities = [1, 2, 3]
+        self.costs = [10, 20, 5]
 
     def reset_to_default(self):
         self.num_processes = 3
@@ -24,7 +23,6 @@ class DeadlockEngine:
         self.costs = [10, 20, 5]
 
     def load_preset(self, preset_name):
-        """Hazır Senaryolar Kütüphanesi"""
         if preset_name == "Deadlock (Kilitlenme Senaryosu)":
             self.set_dimensions(3, 2)
             self.allocation = [[1, 0], [0, 1], [1, 1]]
@@ -84,10 +82,9 @@ class DeadlockEngine:
         return is_safe, safe_sequence
 
     def get_system_health_status(self):
-        """Sistemin anlık sağlık durumunu ve renk kodunu döndürür"""
         is_safe, _ = self.run_bankers()
         if is_safe:
-            return "HEALTHY", "#2ecc71"  # Yeşil
+            return "HEALTHY", "#2ecc71"
         
         has_waiting_requests = False
         for i in range(self.num_processes):
@@ -98,90 +95,131 @@ class DeadlockEngine:
                     break
         
         if has_waiting_requests:
-            return "CRITICAL (DEADLOCK)", "#e74c3c"  # Kırmızı
-        return "WARNING", "#f1c40f"  # Sarı
+            return "CRITICAL (DEADLOCK)", "#e74c3c"
+        return "WARNING", "#f1c40f"
 
-    def get_step_by_step_execution(self):
-        """Adım Adım Çalıştırma için Durum Listesi"""
-        steps = []
-        work = list(self.available)
-        finish = [False] * self.num_processes
-        need = [
-            [self.max_need[i][j] - self.allocation[i][j] for j in range(self.num_resources)]
-            for i in range(self.num_processes)
-        ]
-        safe_sequence = []
+    def kill_exact_single_victim(self, strategy, terminated_set):
+        """SADECE seçilen stratejiye uyan TEK kurbanı öldürür. Diğer hiçbir sürece dokunmaz."""
+        start_time = time.perf_counter()
+        
+        # Henüz kapatılmamış süreçlerin indeksleri
+        active_indices = [k for k in range(self.num_processes) if f"P{k}" not in terminated_set]
+        if not active_indices:
+            return None, 0.0
 
-        for step_idx in range(self.num_processes):
-            found = False
-            for i in range(self.num_processes):
-                if not finish[i]:
-                    steps.append({
-                        "checking_process": f"P{i}",
-                        "status": "CHECKING",
-                        "work": list(work),
-                        "finish": list(finish),
-                        "safe_sequence": list(safe_sequence),
-                        "msg": f"P{i} süreci kontrol ediliyor... İhtiyaç: {need[i]}, Mevcut Kullanılabilir (Work): {work}"
-                    })
-
-                    if all(need[i][j] <= work[j] for j in range(self.num_resources)):
-                        for j in range(self.num_resources):
-                            work[j] += self.allocation[i][j]
-                        finish[i] = True
-                        safe_sequence.append(f"P{i}")
-                        found = True
-
-                        steps.append({
-                            "checking_process": f"P{i}",
-                            "status": "SUCCESS",
-                            "work": list(work),
-                            "finish": list(finish),
-                            "safe_sequence": list(safe_sequence),
-                            "msg": f"P{i} tamamlandı! Kaynaklar serbest bırakıldı. Yeni Work: {work}"
-                        })
-                        break
-                    else:
-                        steps.append({
-                            "checking_process": f"P{i}",
-                            "status": "FAILED",
-                            "work": list(work),
-                            "finish": list(finish),
-                            "safe_sequence": list(safe_sequence),
-                            "msg": f"P{i} kaynak yetersizliğinden atlandı!"
-                        })
-
-            if not found:
-                steps.append({
-                    "checking_process": None,
-                    "status": "DEADLOCK_RISK",
-                    "work": list(work),
-                    "finish": list(finish),
-                    "safe_sequence": list(safe_sequence),
-                    "msg": "İlerleme sağlanamadı! Sistem Kilitlenme (Deadlock) riskinde."
-                })
-                break
-
-        return steps
-
-    def resolve_deadlock_strategy(self, strategy):
-        if strategy == "Victim: Max Allocation (En Çok Kaynak Tüketen)":
-            total_allocated = [sum(self.allocation[i]) for i in range(self.num_processes)]
-            victim_idx = total_allocated.index(max(total_allocated))
-        elif strategy == "Lowest Priority (En Düşük Öncelikliyi Öldür)":
-            victim_idx = self.priorities.index(max(self.priorities))
+        if strategy == "Lowest Priority (En Düşük Öncelikliyi Öldür)":
+            # Prio değeri en büyük olan = Önceliği en düşük demektir
+            victim_idx = max(active_indices, key=lambda k: self.priorities[k])
         elif strategy == "Lowest Termination Cost (En Az Maliyetliyi Kurban Et)":
-            victim_idx = self.costs.index(min(self.costs))
-        elif strategy == "Resource Preemption (Kaynak Geri Alma)":
-            victim_idx = self.num_processes - 1
-        else:
-            victim_idx = self.num_processes - 1
+            # Cost değeri en küçük olan
+            victim_idx = min(active_indices, key=lambda k: self.costs[k])
+        elif strategy == "Victim: Max Allocation (En Çok Kaynak Tüketen)":
+            # Allocation toplamı en çok olan
+            victim_idx = max(active_indices, key=lambda k: sum(self.allocation[k]))
+        else: # Resource Preemption
+            victim_idx = active_indices[-1]
 
+        # SADECE O KURBANIN KAYNAKLARINI SIFIRLA VE HAVUZA AKTAR
         for j in range(self.num_resources):
             self.available[j] += self.allocation[victim_idx][j]
             self.allocation[victim_idx][j] = 0
+            self.max_need[victim_idx][j] = 0  # Talebi silinir
 
-        return f"P{victim_idx} süreci seçilen strateji ({strategy}) doğrultusunda işlendi.", victim_idx
+        end_time = time.perf_counter()
+        exec_time_ms = round((end_time - start_time) * 1000, 4)
+
+        return victim_idx, exec_time_ms
+
+    def generate_sequential_resolve_steps(self, strategy):
+        steps = []
+        curr_alloc = [row[:] for row in self.allocation]
+        curr_max = [row[:] for row in self.max_need]
+        curr_avail = list(self.available)
+        resolved_count = 0
+        terminated_processes = set()
+
+        for i in range(self.num_processes):
+            proc_name = f"P{i}"
+            if i in terminated_processes:
+                continue
+
+            need = [curr_max[i][j] - curr_alloc[i][j] for j in range(self.num_resources)]
+
+            steps.append({
+                "action": "CHECK",
+                "process": proc_name,
+                "msg": f"{proc_name} kontrol ediliyor... İhtiyaç: {need}, Kullanılabilir: {curr_avail}"
+            })
+
+            if not all(need[j] <= curr_avail[j] for j in range(self.num_resources)):
+                resolved_count += 1
+                active_indices = [k for k in range(self.num_processes) if k not in terminated_processes]
+                
+                if strategy == "Victim: Max Allocation (En Çok Kaynak Tüketen)":
+                    victim_idx = max(active_indices, key=lambda k: sum(curr_alloc[k]))
+                elif strategy == "Lowest Priority (En Düşük Öncelikliyi Öldür)":
+                    victim_idx = max(active_indices, key=lambda k: self.priorities[k])
+                elif strategy == "Lowest Termination Cost (En Az Maliyetliyi Kurban Et)":
+                    victim_idx = min(active_indices, key=lambda k: self.costs[k])
+                else:
+                    victim_idx = active_indices[-1]
+
+                steps.append({
+                    "action": "BLOCKED",
+                    "process": proc_name,
+                    "victim": f"P{victim_idx}",
+                    "msg": f"⚠️ {proc_name} kilitlendi! P{victim_idx} kurban seçilip kapatılıyor..."
+                })
+
+                for j in range(self.num_resources):
+                    curr_avail[j] += curr_alloc[victim_idx][j]
+                    curr_alloc[victim_idx][j] = 0
+                    curr_max[victim_idx][j] = 0
+                
+                terminated_processes.add(victim_idx)
+
+                steps.append({
+                    "action": "RESOLVED",
+                    "process": proc_name,
+                    "new_alloc": [row[:] for row in curr_alloc],
+                    "new_max": [row[:] for row in curr_max],
+                    "new_avail": list(curr_avail),
+                    "msg": f"⚡ P{victim_idx} kapatılarak kaynaklar serbest bırakıldı!"
+                })
+
+                need = [curr_max[i][j] - curr_alloc[i][j] for j in range(self.num_resources)]
+                if all(need[j] <= curr_avail[j] for j in range(self.num_resources)):
+                    for j in range(self.num_resources):
+                        curr_avail[j] += curr_alloc[i][j]
+                        curr_alloc[i][j] = 0
+                        curr_max[i][j] = 0
+                    
+                    steps.append({
+                        "action": "SUCCESS",
+                        "process": proc_name,
+                        "new_alloc": [row[:] for row in curr_alloc],
+                        "new_max": [row[:] for row in curr_max],
+                        "new_avail": list(curr_avail),
+                        "resolved_count": resolved_count,
+                        "msg": f"✅ {proc_name} serbest kalan kaynaklarla tamamlandı!"
+                    })
+            else:
+                for j in range(self.num_resources):
+                    curr_avail[j] += curr_alloc[i][j]
+                    curr_alloc[i][j] = 0
+                    curr_max[i][j] = 0
+
+                steps.append({
+                    "action": "SUCCESS",
+                    "process": proc_name,
+                    "new_alloc": [row[:] for row in curr_alloc],
+                    "new_max": [row[:] for row in curr_max],
+                    "new_avail": list(curr_avail),
+                    "resolved_count": resolved_count,
+                    "msg": f"✅ {proc_name} tamamlandı."
+                })
+
+        return steps
 
     def generate_report(self, is_safe, safe_seq):
         now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
