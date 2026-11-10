@@ -21,8 +21,8 @@ class DeadlockSimulatorApp:
         self.cost_entries = []
 
         self.is_dark_mode = False
-        self.terminated_processes = set()  # Sadece öldürülen kurban süreçler (KIRMIZI)
-        self.completed_processes = set()   # İşini bitiren süreçler (YEŞİL)
+        self.terminated_processes = set()  # sadece öldürülen kurban süreçler (kırmızıılar)
+        self.completed_processes = set()   # işini bitiren süreçler (yeşil kısımlar)
         
         self.is_animating = False
         self.anim_speed_ms = 900
@@ -294,13 +294,13 @@ class DeadlockSimulatorApp:
         node_colors = []
         for p in processes:
             if p in self.terminated_processes:
-                node_colors.append("#e74c3c")  # KIRMIZI (Öldürülen Kurban)
+                node_colors.append("#e74c3c")  # kırmızı (öldürülen kurban)
             elif p in self.completed_processes:
-                node_colors.append("#2ecc71")  # YEŞİL (Başarılı)
+                node_colors.append("#2ecc71")  # yeşil (başarili)
             elif active_proc and p == active_proc:
-                node_colors.append("#f1c40f")  # SARI (Kontrol)
+                node_colors.append("#f1c40f")  # sarı (kontrol)
             else:
-                node_colors.append("#a0c4ff")  # MAVİ (Normal)
+                node_colors.append("#a0c4ff")  # mavi (normal)
 
         nx.draw_networkx_nodes(G, pos, nodelist=processes, node_color=node_colors, node_size=1100, ax=self.ax)
         nx.draw_networkx_nodes(G, pos, nodelist=resources, node_color='#b9fbc0', node_shape='s', node_size=1100, ax=self.ax)
@@ -329,12 +329,12 @@ class DeadlockSimulatorApp:
         self.timer_label.config(text=f"{exec_time_ms} ms", fg="#2ecc71")
         self.draw_graph()
         
-        self.log(f"⚡ MÜDAHALE ({selected_strategy}): {victim_name} kurban edildi ve kapatıldı (KIRMIZI). Diğer kilitli süreçler korundu!")
+        self.log(f"MÜDAHALE ({selected_strategy}): {victim_name} kurban edildi ve kapatıldı (KIRMIZI). Diğer kilitli süreçler korundu!")
         messagebox.showinfo("Kurban Kapatıldı", 
-                            f"🔴 Kurban Edilen Süreç: {victim_name} ({selected_strategy})\n\n"
+                            f"Kurban Edilen Süreç: {victim_name} ({selected_strategy})\n\n"
                             f"Sadece {victim_name} sürecinin kaynakları geri alındı ve okları silindi.\n"
                             f"Diğer süreçlerin kilitlenmeleri ve okları aynen korunuyor!\n\n"
-                            f"⏱️ Hesaplama Süresi: {exec_time_ms} ms")
+                            f"Hesaplama Süresi: {exec_time_ms} ms")
 
     # --- ADIM ADIM TÜM KİLİTLERİ ÇÖZEN ANİMASYON DÖNGÜSÜ ---
     def start_sequential_solution_animation(self):
@@ -349,7 +349,7 @@ class DeadlockSimulatorApp:
         self.timer_running = True
         self.update_timer()
         
-        self.log(f"🎬 Sıralı Çözüm Başlatıldı (Strateji: {strategy})...")
+        self.log(f"Sıralı Çözüm Başlatıldı (Strateji: {strategy})...")
         self.run_animation_loop()
 
     def update_timer(self):
@@ -393,8 +393,8 @@ class DeadlockSimulatorApp:
             ms = round(self.elapsed_time * 1000, 2)
             self.timer_label.config(text=f"{self.elapsed_time:.3f} s ({ms} ms)", fg="#2ecc71")
             
-            self.log(f"🎉 Tüm kilitlenmeler sırayla açıldı!")
-            messagebox.showinfo("Çözüm Tamamlandı!", f"🎉 Tüm süreçler sırayla çözüldü!\n⏱️ Geçen Süre: {self.elapsed_time:.3f} s ({ms} ms)")
+            self.log(f"Tüm kilitlenmeler sırayla açıldı!")
+            messagebox.showinfo("Çözüm Tamamlandı!", f"Tüm süreçler sırayla çözüldü!\n⏱️ Geçen Süre: {self.elapsed_time:.3f} s ({ms} ms)")
 
     def update_matrix_entries_from_engine(self):
         for i in range(self.engine.num_processes):
